@@ -1,4 +1,3 @@
-import Button from '@/Button'
 export default function Landing() {
   return (
     <div>
