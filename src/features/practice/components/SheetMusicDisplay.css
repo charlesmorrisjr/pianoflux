@@ -1,0 +1,13 @@
+.sheet-music {
+  margin: 2rem 0;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  overflow-x: auto;
+}
+
+/* Hide tempo marking */
+.abcjs-tempo {
+  display: none;
+}

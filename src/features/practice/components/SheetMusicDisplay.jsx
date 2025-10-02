@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import abcjs from 'abcjs';
 
+import './SheetMusicDisplay.css';
+
 export default function SheetMusicDisplay ({ abcNotation, options = {} }) {
   const containerRef = useRef(null);
 
