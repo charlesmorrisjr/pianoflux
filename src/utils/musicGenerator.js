@@ -1,0 +1,1806 @@
+/**
+ * Music Generator Utility for Sight Reading Training
+ * Generates random ABC notation for piano sight reading practice
+ */
+
+/**
+ * Generates a random ABC notation string for sight reading practice
+ * @param {Object} options - Configuration options
+ * @param {number} options.measures - Number of measures to generate (1-32)
+ * @param {string} options.key - Musical key (e.g., 'C', 'G', 'D', 'Am', 'Em')
+ * @param {string} options.timeSignature - Time signature (e.g., '4/4', '3/4', '2/4', '6/8', '12/8', '2/2')
+ * @param {number[]} options.intervals - Available intervals (1-8)
+ * @param {string[]} options.noteDurations - Available note durations ('1/16', '1/8', '1/4', '1/2', '1')
+ * @param {string[]} options.chordProgressions - Selected chord progression IDs
+ * @param {string[]} options.leftHandPatterns - Selected left hand pattern IDs
+ * @param {string[]} options.rightHandPatterns - Selected right hand pattern IDs
+ * @param {string[]} options.rightHandIntervals - Selected right hand interval types ('2nd', '3rd', etc.)
+ * @param {string[]} options.rightHand4NoteChords - Selected right hand 4-note chord types ('major', '7th')
+ * @returns {Object} Object containing ABC notation string and note metadata
+ *   - abcNotation: {string} ABC notation string
+ *   - noteMetadata: {Array} Array of note objects with timing and pitch information
+ */
+/**
+ * Parse ABC notation to extract note metadata for all voices
+ * @param {string} abcString - Complete ABC notation string
+ * @param {string} timeSignature - Time signature (e.g., '4/4')
+ * @returns {Array} Array of note metadata objects
+ */
+
+// Module-scoped counter - persists across all exercise generations to prevent ID collisions
+let globalNoteIdCounter = 0;
+
+function parseAbcForNoteMetadata(abcString, timeSignature) {
+
+  const noteMetadata = [];
+
+  try {
+
+  // Helper functions
+  function generateNoteId() {
+    return `note_${globalNoteIdCounter++}`;
+  }
+
+  function noteNameToMidiPitch(noteName) {
+    const noteMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
+    
+    const baseNote = noteName.charAt(0).toUpperCase();
+    let octave = 4; // Default octave
+    
+    const commas = (noteName.match(/,/g) || []).length;
+    const apostrophes = (noteName.match(/'/g) || []).length;
+    const isLowercase = noteName.charAt(0) === noteName.charAt(0).toLowerCase();
+    
+    if (commas > 0) {
+      octave = 4 - commas;
+    } else if (isLowercase) {
+      octave = 5 + apostrophes;
+    } else {
+      octave = 4;
+    }
+    
+    const baseMidi = noteMap[baseNote] || 0;
+    return baseMidi + (octave * 12);
+  }
+
+  function convertAbcToStandardNotation(abcNote) {
+    const baseNote = abcNote.charAt(0).toUpperCase();
+    let octave = 4;
+    
+    const commas = (abcNote.match(/,/g) || []).length;
+    const apostrophes = (abcNote.match(/'/g) || []).length;
+    const isLowercase = abcNote.charAt(0) === abcNote.charAt(0).toLowerCase();
+    
+    if (commas > 0) {
+      octave = 4 - commas;
+    } else if (isLowercase) {
+      octave = 5 + apostrophes;
+    }
+    
+    return `${baseNote}${octave}`;
+  }
+
+  // Parse time signature for beat calculations
+  const [beatsPerMeasure, beatUnit] = timeSignature.split('/').map(Number);
+  const _totalBeatsPerMeasure = beatsPerMeasure * (8 / beatUnit); // Not currently used but may be needed for validation
+
+  // Split ABC into lines and process
+  const lines = abcString.split('\n');
+  
+  let currentVoice = 0; // 0 = treble, 1 = bass
+  let globalMeasureIndex = 0; // Global measure counter across both voices
+  let currentMeasureIndexForLine = 0; // Measure index for the current musical line being processed
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    
+    // Detect voice changes - don't reset measure index
+    if (trimmedLine === 'V:1') {
+      currentVoice = 0; // treble
+      continue;
+    }
+    if (trimmedLine === 'V:2') {
+      currentVoice = 1; // bass
+      continue;
+    }
+
+    // Skip header lines and empty lines
+    if (trimmedLine.startsWith('X:') || trimmedLine.startsWith('T:') || 
+        trimmedLine.startsWith('M:') || trimmedLine.startsWith('L:') || 
+        trimmedLine.startsWith('Q:') || trimmedLine.startsWith('K:') ||
+        trimmedLine.startsWith('V:') || trimmedLine === '') {
+      continue;
+    }
+
+    // Process music notation line
+    if (trimmedLine.includes('|')) {
+      const measures = trimmedLine.split('|').filter(m => m.trim() !== '');
+      
+      // For treble clef (voice 0), this is a new set of measures
+      // Set the current measure index for this line
+      if (currentVoice === 0) {
+        currentMeasureIndexForLine = globalMeasureIndex;
+      } else {
+        // For bass clef (voice 1), use the same measure index as the treble clef from the previous line
+      }
+      
+      for (let i = 0; i < measures.length; i++) {
+        const measure = measures[i];
+        const cleanMeasure = measure.replace(/\](?![0-9])/g, ''); // Only remove ] not followed by digits
+        const measureIndexForThisNote = currentMeasureIndexForLine + i;
+        
+        // Parse notes and chords in this measure
+        parseNotesInMeasure(cleanMeasure, currentVoice, measureIndexForThisNote, 0);
+      }
+      
+      // Advance global measure index only after processing the first voice (treble)
+      // This ensures the next treble line starts with the correct measure index
+      if (currentVoice === 0) {
+        globalMeasureIndex += measures.length;
+      }
+    }
+  }
+
+  function parseNotesInMeasure(measureText, voiceIndex, measureIndex, startingBeats) {
+    let position = 0;
+    let beatsUsed = startingBeats;
+
+    while (position < measureText.length) {
+      const char = measureText[position];
+      
+      // Handle chord notation [A,C,E,]
+      if (char === '[') {
+        const chordEnd = measureText.indexOf(']', position);
+        if (chordEnd === -1) break;
+        
+        const chordContent = measureText.substring(position + 1, chordEnd);
+        const durationMatch = measureText.substring(chordEnd + 1).match(/^(\d+)/);
+        const duration = durationMatch ? parseInt(durationMatch[1]) : 1;
+        
+        // Extract individual notes from chord using regex to preserve octave indicators
+        // Pattern: [A-G] followed by optional accidentals (#,b) and octave markers (',)
+        const notePattern = /[A-G][',#b]*/g;
+        const chordNotes = chordContent.match(notePattern) || [];
+        
+        chordNotes.forEach(chordNote => {
+          const cleanNote = chordNote.trim();
+          if (cleanNote && cleanNote !== ',') {
+            const noteId = generateNoteId();
+            const metadata = {
+              id: noteId,
+              expectedNote: convertAbcToStandardNotation(cleanNote),
+              midiPitch: noteNameToMidiPitch(cleanNote),
+              startTime: beatsUsed,
+              duration: duration,
+              measureIndex: measureIndex,
+              voiceIndex: voiceIndex,
+              abcNotation: cleanNote + (duration > 1 ? duration.toString() : '')
+            };
+            noteMetadata.push(metadata);
+          }
+        });
+        
+        beatsUsed += duration;
+        position = chordEnd + 1;
+        
+        // Skip duration digits
+        while (position < measureText.length && /\d/.test(measureText[position])) {
+          position++;
+        }
+      }
+      // Handle individual notes
+      else if (/[A-Ga-g]/.test(char)) {
+        let noteEnd = position + 1;
+        
+        // Include accidentals and octave markers
+        while (noteEnd < measureText.length && /[',#b]/.test(measureText[noteEnd])) {
+          noteEnd++;
+        }
+        
+        // Get duration
+        let duration = 1; // Default to eighth note
+        const durationMatch = measureText.substring(noteEnd).match(/^(\d+)/);
+        if (durationMatch) {
+          duration = parseInt(durationMatch[1]);
+          noteEnd += durationMatch[1].length;
+        }
+        
+        const noteName = measureText.substring(position, noteEnd - (durationMatch ? durationMatch[1].length : 0));
+        
+        if (noteName) {
+          const noteId = generateNoteId();
+          const metadata = {
+            id: noteId,
+            expectedNote: convertAbcToStandardNotation(noteName),
+            midiPitch: noteNameToMidiPitch(noteName),
+            startTime: beatsUsed,
+            duration: duration,
+            measureIndex: measureIndex,
+            voiceIndex: voiceIndex,
+            abcNotation: noteName + (duration > 1 ? duration.toString() : '')
+          };
+          noteMetadata.push(metadata);
+        }
+        
+        beatsUsed += duration;
+        position = noteEnd;
+      }
+      else {
+        position++;
+      }
+    }
+  }
+
+  console.log('✅ Parser complete. Total metadata entries:', noteMetadata.length);
+  return noteMetadata;
+  
+  } catch (error) {
+    console.error('❌ Error parsing ABC notation:', error);
+    console.error('ABC String that caused error:', abcString);
+    return []; // Return empty array on error
+  }
+}
+
+export function generateRandomABC(options) {
+  // Default if not provided in settings
+  const {
+    measures = 8,
+    tempo = 120,
+    key = 'C',
+    timeSignature = '4/4',
+    intervals = [1, 2, 3, 4, 5],
+    noteDurations = ['1/8', '1/4'],
+    chordProgressions = null,
+    leftHandPatterns = ['block-chords'],
+    rightHandPatterns = ['single-notes'],
+    rightHandIntervals = ['2nd'],
+    rightHand4NoteChords = ['major'],
+    leftHandBrokenChords = ['1-3-5-3'],
+    swapHandPatterns = false
+  } = options;
+
+  // Parse time signature
+  const [beatsPerMeasure, beatUnit] = timeSignature.split('/').map(Number);
+  const totalBeatsPerMeasure = beatsPerMeasure * (8 / beatUnit); // Convert to eighth note units
+
+  // Basic ABC header - FIX: Use single backslash for proper newlines
+  let abc = `X:1\nT:\nM:${timeSignature}\nL:1/8\nQ:${tempo}\nK:${key}\n`;
+  abc += "V:1 clef=treble\nV:2 clef=bass\n";
+
+  // Convert note durations to eighth note units
+  const durationMap = {
+    '1/16': 0.5,
+    '1/8': 1,
+    '1/4': 2,
+    '1/2': 4,
+    '1': 8
+  };
+
+  const availableDurations = noteDurations.map(duration => ({
+    duration,
+    beats: durationMap[duration],
+    abcNotation: duration === '1/8' ? '' : duration === '1/4' ? '2' : 
+                 duration === '1/2' ? '4' : duration === '1' ? '8' : '/2'
+  }));
+
+  // Generate chord progression for the piece
+  const chordProgression = generateChordProgression(measures, key, chordProgressions);
+  
+  // Pattern configuration object for helper functions
+  const patternConfig = {
+    intervals,
+    availableDurations,
+    key,
+    rightHandIntervals,
+    rightHand4NoteChords,
+    leftHandBrokenChords
+  };
+  
+  // Generate measures for both clefs
+  let trebleMeasures = [];
+  let bassMeasures = [];
+  
+  for (let i = 0; i < measures; i++) {
+    const currentChord = chordProgression[i];
+    
+    // Determine which patterns to use for each clef based on swap setting
+    const treblePattern = swapHandPatterns ? leftHandPatterns[0] : rightHandPatterns[0];
+    const bassPattern = swapHandPatterns ? rightHandPatterns[0] : leftHandPatterns[0];
+    const trebleSource = swapHandPatterns ? 'left' : 'right';
+    const bassSource = swapHandPatterns ? 'right' : 'left';
+    
+    // Generate measures using helper functions
+    const trebleMeasure = generatePatternForClef('treble', treblePattern, trebleSource, currentChord, totalBeatsPerMeasure, patternConfig, swapHandPatterns);
+    const bassMeasure = generatePatternForClef('bass', bassPattern, bassSource, currentChord, totalBeatsPerMeasure, patternConfig, swapHandPatterns);
+    
+    trebleMeasures.push(trebleMeasure);
+    bassMeasures.push(bassMeasure);
+  }
+
+  // Build ABC with both voices interleaved - FIX: Use single backslash for proper newlines
+  for (let i = 0; i < measures; i++) {
+    if (i === measures - 1) {
+      trebleMeasures[i] = trebleMeasures[i].replace('|', '|]');
+      bassMeasures[i] = bassMeasures[i].replace('|', '|]');
+    }
+
+    abc += `V:1\n${trebleMeasures[i]}\n`;
+    abc += `V:2\n${bassMeasures[i]}\n`;
+  }
+
+  // Parse the complete ABC notation to create metadata for both voices
+  const noteMetadata = parseAbcForNoteMetadata(abc, timeSignature);
+
+  // Log the ABC notation to the console for debugging
+  console.log('Generated ABC:', abc);
+  console.log('Note metadata:', noteMetadata);
+
+  return {
+    abcNotation: abc,
+    noteMetadata: noteMetadata
+  };
+}
+
+/**
+ * Get available keys for practice
+ */
+export const AVAILABLE_KEYS = [
+  // Major keys
+  'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
+  // Minor keys
+  'Am', 'A#m', 'Bm', 'Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm', 'F#m', 'Gm', 'G#m'
+];
+
+/**
+ * Get available time signatures
+ */
+export const AVAILABLE_TIME_SIGNATURES = [
+  '4/4', '3/4', '2/4', '5/4', '6/4', '6/8', '12/8', '3/8', '2/2', '3/2', '4/2'
+];
+
+/**
+ * Get available note durations
+ */
+export const AVAILABLE_NOTE_DURATIONS = [
+  { value: '1/16', label: '16th notes' },
+  { value: '1/8', label: '8th notes' },
+  { value: '1/4', label: 'Quarter notes' },
+  { value: '1/2', label: 'Half notes' },
+  { value: '1', label: 'Whole notes' }
+];
+
+/**
+ * Get available intervals
+ */
+export const AVAILABLE_INTERVALS = [
+  { value: 1, label: 'Unison' },
+  { value: 2, label: '2nd' },
+  { value: 3, label: '3rd' },
+  { value: 4, label: '4th' },
+  { value: 5, label: '5th' },
+  { value: 6, label: '6th' },
+  { value: 7, label: '7th' },
+  { value: 8, label: '8th' }
+];
+
+/**
+ * Chord progression definitions with user-friendly labels
+ */
+export const CHORD_PROGRESSIONS = [
+  {
+    id: 'pop',
+    label: 'I-V-vi-IV (Pop)',
+    progression: ['I', 'V', 'vi', 'IV']
+  },
+  {
+    id: '50s',
+    label: 'I-vi-IV-V (50s)',
+    progression: ['I', 'vi', 'IV', 'V']
+  },
+  {
+    id: 'pop-variation',
+    label: 'vi-IV-I-V (Pop Variation)',
+    progression: ['vi', 'IV', 'I', 'V']
+  },
+  {
+    id: 'basic-cadence',
+    label: 'I-IV-V-I (Basic Cadence)',
+    progression: ['I', 'IV', 'V', 'I']
+  },
+  {
+    id: 'jazz',
+    label: 'ii-V-I-vi (Jazz)',
+    progression: ['ii', 'V', 'I', 'vi']
+  },
+  {
+    id: 'alternating',
+    label: 'I-V-I-V (Alternating)',
+    progression: ['I', 'V', 'I', 'V']
+  },
+  {
+    id: 'minor-start',
+    label: 'vi-V-IV-V (Minor Start)',
+    progression: ['vi', 'V', 'IV', 'V']
+  },
+  {
+    id: 'variation',
+    label: 'I-iii-vi-IV (Variation)',
+    progression: ['I', 'iii', 'vi', 'IV']
+  }
+];
+
+/**
+ * Available left hand patterns
+ */
+export const AVAILABLE_LEFT_HAND_PATTERNS = [
+  {
+    id: 'block-chords',
+    label: 'Block Chords',
+    description: 'Whole note chords in the bass',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  },
+  {
+    id: 'alberti-bass',
+    label: 'Alberti Bass',
+    description: 'Broken chord pattern (root-fifth-third-fifth)',
+    supportedTimeSignatures: ['4/4', '3/4']
+  },
+  {
+    id: 'octaves',
+    label: 'Octaves',
+    description: 'Root note with octave higher',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  },
+  {
+    id: 'walking-bass',
+    label: 'Walking Bass',
+    description: 'Quarter note bass line walking through chord changes',
+    supportedTimeSignatures: ['4/4']
+  },
+  {
+    id: 'broken-chords',
+    label: 'Broken Chords',
+    description: 'Arpeggiated chord patterns with various sequences',
+    supportedTimeSignatures: ['4/4']
+  }
+];
+export const AVAILABLE_MELODIC_PATTERNS = [
+  { id: 'melodies', label: 'Melodies' },
+  { id: 'scales', label: 'Scales' },
+  { id: 'arpeggios', label: 'Arpeggios' }
+];
+
+export const AVAILABLE_MELODIC_ARTICULATIONS = [
+  { id: 'legato', label: 'Legato' },
+  { id: 'staccato', label: 'Staccato' },
+  { id: 'accent', label: 'Accent' }
+];
+
+/**
+ * Available right hand patterns
+ */
+export const AVAILABLE_RIGHT_HAND_PATTERNS = [
+  {
+    id: 'single-notes',
+    label: 'Single Notes',
+    description: 'Single note melody line',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  },
+  {
+    id: 'intervals',
+    label: 'Intervals',
+    description: 'Two-note intervals',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  },
+  {
+    id: '3-note-chords',
+    label: '3 Note Chords',
+    description: 'Three-note chord voicings',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  },
+  {
+    id: '4-note-chords',
+    label: '4 Note Chords',
+    description: 'Four-note chord voicings',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  },
+  {
+    id: 'arpeggios',
+    label: 'Arpeggios',
+    description: 'Broken chord patterns',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  },
+  {
+    id: 'octaves',
+    label: 'Octaves',
+    description: 'Melody notes with octave higher',
+    supportedTimeSignatures: ['4/4', '3/4', '2/4', '6/8', '12/8', '2/2']
+  }
+];
+/**
+ * Available chord types for chord practice
+ */
+export const AVAILABLE_CHORD_TYPES = [
+  { id: 'major', label: 'Major' },
+  { id: 'minor', label: 'Minor' },
+  { id: 'diminished', label: 'Diminished' },
+  { id: 'augmented', label: 'Augmented' },
+  { id: '7th', label: '7th' },
+  { id: 'minor7th', label: 'Minor 7th' },
+  { id: 'major7th', label: 'Major 7th' },
+  { id: 'diminished7th', label: 'Diminished 7th' }
+];
+
+/**
+ * Available chord inversions for chord practice
+ */
+export const AVAILABLE_CHORD_INVERSIONS = [
+  { id: 'root', label: 'Root Position' },
+  { id: 'first', label: 'First Inversion' },
+  { id: 'second', label: 'Second Inversion' },
+  { id: 'third', label: 'Third Inversion' }
+];
+
+/**
+ * Available chord voicings for chord practice
+ */
+export const AVAILABLE_CHORD_VOICINGS = [
+  { id: 'closed', label: 'Closed Voicing' },
+  { id: 'open', label: 'Open Voicing' },
+  { id: 'spread', label: 'Spread Voicing' },
+  { id: 'drop2', label: 'Drop 2' },
+  { id: 'drop3', label: 'Drop 3' }
+];
+
+/**
+ * Available chord rhythms for chord practice
+ */
+export const AVAILABLE_CHORD_RHYTHMS = [
+  { id: 'straight', label: 'Straight' },
+  { id: 'swing', label: 'Swing' },
+  { id: 'bossa-nova', label: 'Bossa Nova' },
+  { id: 'jazz-waltz', label: 'Jazz Waltz' },
+  { id: 'latin', label: 'Latin' },
+  { id: 'ballad', label: 'Ballad' }
+];
+
+/**
+ * Scale degree to note mapping for major keys
+ */
+const MAJOR_SCALE_DEGREES = {
+  'C': ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
+  'C#': ['C#', 'D#', 'E#', 'F#', 'G#', 'A#', 'B#'],
+  'D': ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
+  'D#': ['D#', 'E#', 'F##', 'G#', 'A#', 'B#', 'C##'],
+  'E': ['E', 'F#', 'G#', 'A', 'B', 'C#', 'D#'],
+  'F': ['F', 'G', 'A', 'Bb', 'C', 'D', 'E'],
+  'F#': ['F#', 'G#', 'A#', 'B', 'C#', 'D#', 'E#'],
+  'G': ['G', 'A', 'B', 'C', 'D', 'E', 'F#'],
+  'G#': ['G#', 'A#', 'B#', 'C#', 'D#', 'E#', 'F##'],
+  'A': ['A', 'B', 'C#', 'D', 'E', 'F#', 'G#'],
+  'A#': ['A#', 'B#', 'C##', 'D#', 'E#', 'F##', 'G##'],
+  'B': ['B', 'C#', 'D#', 'E', 'F#', 'G#', 'A#']
+};
+
+/**
+ * Scale degree to note mapping for minor keys (natural minor)
+ */
+const MINOR_SCALE_DEGREES = {
+  'Am': ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+  'A#m': ['A#', 'B#', 'C#', 'D#', 'E#', 'F#', 'G#'],
+  'Bm': ['B', 'C#', 'D', 'E', 'F#', 'G', 'A'],
+  'Cm': ['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb'],
+  'C#m': ['C#', 'D#', 'E', 'F#', 'G#', 'A', 'B'],
+  'Dm': ['D', 'E', 'F', 'G', 'A', 'Bb', 'C'],
+  'D#m': ['D#', 'E#', 'F#', 'G#', 'A#', 'B', 'C#'],
+  'Em': ['E', 'F#', 'G', 'A', 'B', 'C', 'D'],
+  'Fm': ['F', 'G', 'Ab', 'Bb', 'C', 'Db', 'Eb'],
+  'F#m': ['F#', 'G#', 'A', 'B', 'C#', 'D', 'E'],
+  'Gm': ['G', 'A', 'Bb', 'C', 'D', 'Eb', 'F'],
+  'G#m': ['G#', 'A#', 'B', 'C#', 'D#', 'E', 'F#']
+};
+
+/**
+ * Convert Roman numeral chord to chord notes
+ * @param {string} romanNumeral - Roman numeral chord (e.g., 'I', 'vi', 'V')
+ * @param {string} key - Musical key
+ * @returns {string[]} Array of chord notes
+ */
+function getRomanNumeralChord(romanNumeral, key) {
+  const isMinorKey = key.includes('m');
+  const scaleDegrees = isMinorKey ? MINOR_SCALE_DEGREES[key] : MAJOR_SCALE_DEGREES[key];
+  
+  if (!scaleDegrees) {
+    console.warn(`Unknown key: ${key}`);
+    return ['C', 'E', 'G']; // Default C major chord
+  }
+
+  // Parse Roman numeral
+  const degree = romanNumeral.toLowerCase();
+  
+  let rootIndex;
+  switch (degree) {
+    case 'i': rootIndex = 0; break;
+    case 'ii': rootIndex = 1; break;
+    case 'iii': rootIndex = 2; break;
+    case 'iv': rootIndex = 3; break;
+    case 'v': rootIndex = 4; break;
+    case 'vi': rootIndex = 5; break;
+    case 'vii': rootIndex = 6; break;
+    default: rootIndex = 0;
+  }
+
+  const root = scaleDegrees[rootIndex];
+  const third = scaleDegrees[(rootIndex + 2) % 7];
+  const fifth = scaleDegrees[(rootIndex + 4) % 7];
+
+  // For minor keys, adjust chord qualities
+  if (isMinorKey) {
+    // Natural minor chord qualities: i, ii°, III, iv, v, VI, VII
+    const minorChordQualities = ['minor', 'diminished', 'major', 'minor', 'minor', 'major', 'major'];
+    const quality = minorChordQualities[rootIndex];
+    
+    if (quality === 'diminished') {
+      // For diminished chords, flatten the fifth
+      const flatFifth = scaleDegrees[(rootIndex + 4) % 7]; // This is simplified
+      return [root, third, flatFifth];
+    }
+  } else {
+    // Major key chord qualities: I, ii, iii, IV, V, vi, vii°
+    const majorChordQualities = ['major', 'minor', 'minor', 'major', 'major', 'minor', 'diminished'];
+    const quality = majorChordQualities[rootIndex];
+    
+    if (quality === 'diminished') {
+      return [root, third, fifth]; // Simplified for now
+    }
+  }
+
+  return [root, third, fifth];
+}
+
+/**
+ * Generate a chord progression based on user selection
+ * @param {number} numMeasures - Number of measures
+ * @param {string} key - Musical key
+ * @param {string[]} selectedProgressions - Array of selected progression IDs
+ * @returns {string[][]} Array of chord progressions, each containing note arrays
+ */
+function generateChordProgression(numMeasures, key, selectedProgressions = null) {
+  // If no progressions selected, use all available progressions
+  const availableProgressions = selectedProgressions && selectedProgressions.length > 0
+    ? CHORD_PROGRESSIONS.filter(prog => selectedProgressions.includes(prog.id))
+    : CHORD_PROGRESSIONS;
+  
+  const selectedProgression = availableProgressions[Math.floor(Math.random() * availableProgressions.length)];
+  const progression = selectedProgression.progression;
+  const chords = [];
+  
+  for (let i = 0; i < numMeasures; i++) {
+    const romanNumeral = progression[i % progression.length];
+    const chordNotes = getRomanNumeralChord(romanNumeral, key);
+    chords.push(chordNotes);
+  }
+  
+  return chords;
+}
+
+/**
+ * Generate right hand pattern measure
+ * @param {string} pattern - Pattern type ('octaves', 'intervals', etc.)
+ * @param {Array} currentChord - Current chord notes
+ * @param {number} totalBeatsPerMeasure - Total beats in measure
+ * @param {Array} intervals - Available intervals
+ * @param {Array} availableDurations - Available durations
+ * @param {string} key - Musical key
+ * @param {Array} rightHandIntervals - Right hand interval settings
+ * @param {Array} rightHand4NoteChords - Right hand chord settings
+ * @returns {string} Generated ABC measure
+ */
+/**
+ * Generate simple single note melody
+ * @param {Array} currentChord - Current chord notes
+ * @param {number} totalBeatsPerMeasure - Total beats in measure
+ * @param {Array} intervals - Available intervals
+ * @param {Array} availableDurations - Available durations
+ * @param {string} key - Musical key
+ * @returns {string} Generated ABC measure
+ */
+function generateSimpleMelody(currentChord, totalBeatsPerMeasure, intervals, availableDurations, key) {
+  const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  let lastNoteIndex = 0;
+  let octaveLower = false;
+  let measure = '';
+  let beatsUsed = 0;
+
+  // Get harmonic note indices if chord is provided
+  const harmonicIndices = currentChord ? getHarmonicNoteIndices(currentChord, key) : null;
+
+  // Fill measure with random notes
+  while (beatsUsed < totalBeatsPerMeasure) {
+    let candidateIndex;
+    let interval = 0;
+    
+    // 10% chance to use harmonic note, 90% chance to use interval-based movement
+    if (harmonicIndices && Math.random() < 0.1) {
+      const harmonicIndex = harmonicIndices[Math.floor(Math.random() * harmonicIndices.length)];
+      candidateIndex = harmonicIndex;
+    } else {
+      interval = intervals[Math.floor(Math.random() * intervals.length)] - 1;
+      interval = Math.random() < 0.5 ? -interval : interval;
+      candidateIndex = lastNoteIndex + interval;
+    }
+  
+    // Clamp to bounds (treble clef range)
+    if (candidateIndex > 10) {
+      candidateIndex = lastNoteIndex - Math.abs(interval || 1);
+    }
+    if (candidateIndex < -3) {
+      candidateIndex = lastNoteIndex + Math.abs(interval || 1);
+    }
+    lastNoteIndex = candidateIndex;
+
+    // Determine octave placement
+    let nextNoteIndex = lastNoteIndex;
+    if (nextNoteIndex < 0) {
+      octaveLower = true;
+    }
+
+    // Set next note (use modulo to wrap around the notes array)
+    let nextNote = notes[((lastNoteIndex % 7) + 7) % 7];
+    
+    // Apply octave modifications
+    if (octaveLower) {
+      let numOctavesLower = Math.abs(Math.floor(nextNoteIndex / 7));
+      nextNote = nextNote + ",".repeat(numOctavesLower);
+      octaveLower = false;
+    } else if (nextNoteIndex >= 7) {
+      nextNote = nextNote.toLowerCase();
+    }
+
+    // Select random duration that fits in remaining beats
+    const remainingBeats = totalBeatsPerMeasure - beatsUsed;
+    const validDurations = availableDurations.filter(d => d.beats <= remainingBeats);
+    
+    if (validDurations.length === 0) {
+      const shortestDuration = availableDurations.reduce((shortest, current) => 
+        current.beats < shortest.beats ? current : shortest
+      );
+      measure += nextNote + shortestDuration.abcNotation;
+      beatsUsed += shortestDuration.beats;
+      break;
+    }
+
+    const selectedDuration = validDurations[Math.floor(Math.random() * validDurations.length)];
+    
+    // Add note with duration to measure
+    measure += nextNote + selectedDuration.abcNotation;
+    beatsUsed += selectedDuration.beats;
+
+    // Add space after certain note types for readability
+    if (selectedDuration.abcNotation && beatsUsed < totalBeatsPerMeasure) {
+      measure += ' ';
+    }
+  }
+  
+  return measure + '|';
+}
+
+function generateRightHandPattern(pattern, currentChord, totalBeatsPerMeasure, intervals, availableDurations, key, rightHandIntervals, rightHand4NoteChords) {
+  switch (pattern) {
+    case 'octaves':
+      return generateRightHandOctaves(0, -3, 0, null, null, currentChord, totalBeatsPerMeasure, intervals, availableDurations, key);
+    case 'intervals': {
+      const selectedInterval = rightHandIntervals && rightHandIntervals.length > 0 ? rightHandIntervals[0] : '2nd';
+      return generateRightHandIntervals(0, -3, 0, null, null, currentChord, totalBeatsPerMeasure, intervals, availableDurations, key, selectedInterval);
+    }
+    case '3-note-chords':
+      return generateRightHand3NoteChords(0, -3, 0, null, null, currentChord, totalBeatsPerMeasure, intervals, availableDurations);
+    case '4-note-chords': {
+      const selectedChordType = rightHand4NoteChords && rightHand4NoteChords.length > 0 ? rightHand4NoteChords[0] : 'major';
+      return generateRightHand4NoteChords(0, -3, 0, null, null, currentChord, totalBeatsPerMeasure, intervals, availableDurations, key, selectedChordType);
+    }
+    default: // 'single-notes' and others
+      // Generate simple single note melody
+      return generateSimpleMelody(currentChord, totalBeatsPerMeasure, intervals, availableDurations, key);
+  }
+}
+
+/**
+ * Generate left hand pattern measure
+ * @param {string} pattern - Pattern type ('alberti-bass', 'octaves', etc.)
+ * @param {Array} currentChord - Current chord notes
+ * @param {number} totalBeatsPerMeasure - Total beats in measure
+ * @param {Array} leftHandBrokenChords - Left hand broken chord settings
+ * @returns {string} Generated ABC measure
+ */
+function generateLeftHandPattern(pattern, currentChord, totalBeatsPerMeasure, leftHandBrokenChords) {
+  switch (pattern) {
+    case 'alberti-bass':
+      return generateAlbertiBass(currentChord, totalBeatsPerMeasure);
+    case 'octaves':
+      return generateLeftHandOctaves(currentChord, totalBeatsPerMeasure);
+    case 'walking-bass':
+      return generateBassChord(currentChord, totalBeatsPerMeasure); // Placeholder implementation
+    case 'broken-chords': {
+      const selectedBrokenChordPattern = leftHandBrokenChords && leftHandBrokenChords.length > 0 ? leftHandBrokenChords[0] : '1-3-5-3';
+      return generateLeftHandBrokenChords(currentChord, totalBeatsPerMeasure, selectedBrokenChordPattern);
+    }
+    default: // 'block-chords' and others
+      return generateBassChord(currentChord, totalBeatsPerMeasure);
+  }
+}
+
+/**
+ * Generate pattern for specific clef with appropriate octave handling
+ * @param {string} clef - 'treble' or 'bass'
+ * @param {string} patternType - Pattern type identifier
+ * @param {string} patternSource - 'left' or 'right' hand pattern
+ * @param {Array} currentChord - Current chord notes
+ * @param {number} totalBeatsPerMeasure - Total beats in measure
+ * @param {Object} patternConfig - Configuration object with intervals, durations, etc.
+ * @param {boolean} swapHandPatterns - Whether patterns are swapped
+ * @returns {string} Generated ABC measure with appropriate octave
+ */
+function generatePatternForClef(clef, patternType, patternSource, currentChord, totalBeatsPerMeasure, patternConfig, swapHandPatterns) {
+  const { intervals, availableDurations, key, rightHandIntervals, rightHand4NoteChords, leftHandBrokenChords } = patternConfig;
+  
+  let measure;
+  
+  if (patternSource === 'right') {
+    measure = generateRightHandPattern(patternType, currentChord, totalBeatsPerMeasure, intervals, availableDurations, key, rightHandIntervals, rightHand4NoteChords);
+  } else {
+    measure = generateLeftHandPattern(patternType, currentChord, totalBeatsPerMeasure, leftHandBrokenChords);
+  }
+  
+  // Apply octave adjustment if patterns are swapped
+  if (swapHandPatterns) {
+    if (clef === 'treble' && patternSource === 'left') {
+      // Left hand pattern in treble clef - raise octave
+      measure = adjustMeasureOctave(measure, 1);
+    } else if (clef === 'bass' && patternSource === 'right') {
+      // Right hand pattern in bass clef - lower octave
+      measure = adjustMeasureOctave(measure, -1);
+    }
+  }
+  
+  return measure;
+}
+
+/**
+ * Get harmonically appropriate note indices based on chord
+ * @param {string[]} chordNotes - Current chord notes (e.g., ['C', 'E', 'G'])
+ * @param {string} key - Musical key
+ * @returns {number[]} Array of note indices that work with the chord
+ */
+function getHarmonicNoteIndices(chordNotes, key) {
+  if (!chordNotes) return [0, 1, 2, 3, 4, 5, 6]; // Default to all scale degrees
+  
+  const isMinorKey = key.includes('m');
+  const scaleDegrees = isMinorKey ? MINOR_SCALE_DEGREES[key] : MAJOR_SCALE_DEGREES[key];
+  
+  if (!scaleDegrees) return [0, 1, 2, 3, 4, 5, 6];
+  
+  const harmonicIndices = [];
+  
+  // Add chord tones (higher weight by including multiple times)
+  chordNotes.forEach(chordNote => {
+    const index = scaleDegrees.findIndex(note => note.replace(/[#b]/g, '') === chordNote.replace(/[#b]/g, ''));
+    if (index !== -1) {
+      // Add chord tones multiple times to increase probability
+      harmonicIndices.push(index, index, index);
+    }
+  });
+  
+  // Add scale tones (passing notes) with lower weight
+  for (let i = 0; i < 7; i++) {
+    harmonicIndices.push(i);
+  }
+  
+  return harmonicIndices;
+}
+
+/**
+ * Convert note name to ABC notation for bass clef
+ * @param {string} noteName - Note name (e.g., 'C', 'F#', 'Bb')
+ * @returns {string} ABC notation for bass clef
+ */
+function convertNoteToABC(noteName) {
+  // Remove ALL sharp and flat notation because they are not needed and
+  // will cause issues with how the notes are displayed in the sheet music
+  let abcNote = noteName.replace(/#+/g, '').replace(/b+/g, '');
+  
+  // For bass clef, we want notes in the lower octaves
+  // Default bass range is around C2-C4, so we'll add commas for lower octaves
+  if (abcNote.length === 1) {
+    // Single letter notes need to be lowercase for higher octave or add commas for lower
+    abcNote = abcNote + ','; // One comma for one octave lower (bass range)
+  } else if (abcNote.length === 2) {
+    // Notes with accidentals (should not happen after removing # and b, but kept for safety)
+    abcNote = abcNote + ',';
+  }
+  
+  return abcNote;
+}
+
+/**
+ * Adjusts ABC notation to raise notes by one octave
+ * @param {string} abcNote - ABC notation note (e.g., 'C,', 'D', 'd')
+ * @returns {string} ABC notation raised by one octave
+ */
+function raiseOctave(abcNote) {
+  // Remove commas (lower octave markers) first
+  if (abcNote.includes(',')) {
+    return abcNote.replace(',', '');
+  }
+  
+  // If uppercase, convert to lowercase (raise by octave)
+  if (abcNote.match(/^[A-G]/)) {
+    return abcNote.toLowerCase();
+  }
+  
+  // If already lowercase, add apostrophe for higher octave
+  if (abcNote.match(/^[a-g]/)) {
+    return abcNote + "'";
+  }
+  
+  return abcNote;
+}
+
+/**
+ * Adjusts ABC notation to lower notes by one octave  
+ * @param {string} abcNote - ABC notation note (e.g., 'C', 'd', "d'")
+ * @returns {string} ABC notation lowered by one octave
+ */
+function lowerOctave(abcNote) {
+  // Remove apostrophes (higher octave markers) first
+  if (abcNote.includes("'")) {
+    return abcNote.replace("'", '');
+  }
+  
+  // If lowercase, convert to uppercase (lower by octave)
+  if (abcNote.match(/^[a-g]/)) {
+    return abcNote.toUpperCase();
+  }
+  
+  // If uppercase, add comma for lower octave
+  if (abcNote.match(/^[A-G]/)) {
+    return abcNote + ',';
+  }
+  
+  return abcNote;
+}
+
+/**
+ * Adjusts an entire measure string by raising or lowering octaves
+ * @param {string} measure - ABC measure string (e.g., 'C2 D E F|')
+ * @param {number} octaveShift - Positive to raise, negative to lower
+ * @returns {string} Adjusted measure string
+ */
+function adjustMeasureOctave(measure, octaveShift) {
+  if (octaveShift === 0) return measure;
+  
+  // Find all note patterns in the measure
+  // Match: [A-Ga-g] followed by optional accidentals and octave markers, followed by optional duration
+  const notePattern = /([A-Ga-g][',#b]*)(\d*)/g;
+  
+  return measure.replace(notePattern, (match, notePart, duration) => {
+    let adjustedNote = notePart;
+    
+    // Apply octave shifts
+    for (let i = 0; i < Math.abs(octaveShift); i++) {
+      if (octaveShift > 0) {
+        adjustedNote = raiseOctave(adjustedNote);
+      } else {
+        adjustedNote = lowerOctave(adjustedNote);
+      }
+    }
+    
+    return adjustedNote + duration;
+  });
+}
+
+/**
+ * Generate a bass chord measure
+ * @param {string[]} chordNotes - Array of chord note names
+ * @param {number} totalBeats - Total beats in the measure
+ * @returns {string} ABC notation for bass chord measure
+ */
+function generateBassChord(chordNotes, totalBeats) {
+  // Convert chord notes to ABC notation
+  const abcChordNotes = chordNotes.map(convertNoteToABC);
+  
+  // Create a block chord (notes played simultaneously)
+  // For a whole note in 4/4 time (8 eighth note beats), we use 8
+  const durationNotation = totalBeats.toString();
+  
+  // Create block chord notation [notes]duration
+  const blockChord = `[${abcChordNotes.join('')}]${durationNotation}`;
+  
+  return blockChord + '|';
+}
+
+/**
+ * Generate an Alberti bass measure (root-fifth-third-fifth pattern)
+ * @param {string[]} chordNotes - Array of chord note names
+ * @param {number} totalBeats - Total beats in the measure
+ * @returns {string} ABC notation for Alberti bass measure
+ */
+function generateAlbertiBass(chordNotes, totalBeats) {
+  if (chordNotes.length < 3) {
+    // Fallback to block chord if not enough notes
+    return generateBassChord(chordNotes, totalBeats);
+  }
+  
+  // Extract chord tones: root, third, fifth
+  const root = convertNoteToABC(chordNotes[0]);
+  const third = convertNoteToABC(chordNotes[1]);
+  const fifth = convertNoteToABC(chordNotes[2]);
+  
+  // Alberti pattern: root-fifth-third-fifth
+  const pattern = [root, fifth, third, fifth];
+  
+  let measure = '';
+  let beatsUsed = 0;
+  
+  // Fill measure with Alberti pattern (eighth notes - traditional Alberti bass)
+  while (beatsUsed < totalBeats) {
+    const patternIndex = beatsUsed % pattern.length;
+    measure += pattern[patternIndex]; // No duration notation = eighth notes (default)
+    beatsUsed += 1; // Each note is an eighth note (1 beat in our system)
+  }
+  
+  return measure + '|';
+}
+
+/**
+ * Generate a left-hand octaves measure (root note with octave higher)
+ * @param {string[]} chordNotes - Array of chord note names
+ * @param {number} totalBeats - Total beats in the measure
+ * @returns {string} ABC notation for left-hand octaves measure
+ */
+function generateLeftHandOctaves(chordNotes, totalBeats) {
+  if (chordNotes.length === 0) {
+    return generateBassChord(['C', 'E', 'G'], totalBeats);
+  }
+  
+  const root = convertNoteToABC(chordNotes[0]);
+  const rootOctaveHigher = root.replace(/,/g, '');
+  
+  const durationNotation = totalBeats.toString();
+  
+  const octaveInterval = `[${root}${rootOctaveHigher}]${durationNotation}`;
+  
+  return octaveInterval + '|';
+}
+
+/**
+ * Convert note index to specific octave level with proper comma notation
+ * @param {number} noteIndex - Note index (0-6)
+ * @param {number} octaveLevel - Octave level (0=,,, 1=,, 2=no comma, etc.)
+ * @returns {string} ABC notation with correct octave
+ */
+function getNoteAtOctaveLevel(noteIndex, octaveLevel) {
+  const octaveOffset = 0;
+  const maxOctavesLower = 3;
+  
+  // Convert octave level to note index adjustment
+  // Level 0: ,, (noteIndex - 14)
+  // Level 1: , (noteIndex - 7) 
+  // Level 2: no comma (noteIndex)
+  const adjustment = (2 - octaveLevel) * 7;
+  
+  return convertNoteIndexToABC(noteIndex - adjustment, octaveOffset, maxOctavesLower);
+}
+
+/**
+ * Get absolute pitch position for comparison (higher number = higher pitch)
+ * @param {number} noteIndex - Note index (0-6)
+ * @param {number} octaveLevel - Octave level (0=,,, 1=,, 2=no comma)
+ * @returns {number} Absolute pitch for comparison
+ */
+function getAbsolutePitch(noteIndex, octaveLevel) {
+  return noteIndex + (octaveLevel * 7);
+}
+
+/**
+ * Generate properly spaced octaves for 1-5-1-3-5-3-1-5 broken chord pattern
+ * First 5 notes ascending, last 3 notes descending
+ * @param {number} rootIndex - Root note index (0-6)
+ * @param {number} thirdIndex - Third note index (0-6) 
+ * @param {number} fifthIndex - Fifth note index (0-6)
+ * @returns {array} Array with properly octaved notes for each pattern position
+ */
+function validateBrokenChordOctaves(rootIndex, thirdIndex, fifthIndex) {
+  // Pattern positions: 1-5-1-3-5-3-1-5
+  // Indices:          [0,1,2,3,4,5,6,7]
+  const pattern = [
+    {degree: rootIndex, pos: 0},   // 1
+    {degree: fifthIndex, pos: 1},  // 5
+    {degree: rootIndex, pos: 2},   // 1 
+    {degree: thirdIndex, pos: 3},  // 3
+    {degree: fifthIndex, pos: 4},  // 5
+    {degree: thirdIndex, pos: 5},  // 3
+    {degree: rootIndex, pos: 6},   // 1
+    {degree: fifthIndex, pos: 7}   // 5
+  ];
+  
+  // Determine octave levels for ascending positions 0-4
+  let octaveLevels = new Array(8);
+  let currentPitch = -1;
+  
+  // Positions 0-4: Ascending (each note >= previous)
+  for (let i = 0; i < 5; i++) {
+    let bestLevel = 0;
+    let bestPitch = getAbsolutePitch(pattern[i].degree, 0);
+    
+    // Find lowest octave level that maintains ascending order
+    for (let level = 0; level <= 2; level++) {
+      let testPitch = getAbsolutePitch(pattern[i].degree, level);
+      if (testPitch >= currentPitch) {
+        bestLevel = level;
+        bestPitch = testPitch;
+        break;
+      }
+    }
+    
+    octaveLevels[i] = bestLevel;
+    currentPitch = bestPitch;
+  }
+  
+  // Positions 5-7: Descending (each note <= previous)
+  currentPitch = getAbsolutePitch(pattern[4].degree, octaveLevels[4]); // Start from position 4
+  
+  for (let i = 5; i < 8; i++) {
+    let bestLevel = 2;
+    let bestPitch = getAbsolutePitch(pattern[i].degree, 2);
+    
+    // Find highest octave level that maintains descending order  
+    for (let level = 2; level >= 0; level--) {
+      let testPitch = getAbsolutePitch(pattern[i].degree, level);
+      if (testPitch <= currentPitch) {
+        bestLevel = level;
+        bestPitch = testPitch;
+        break;
+      }
+    }
+    
+    octaveLevels[i] = bestLevel;
+    currentPitch = bestPitch;
+  }
+  
+  // Convert to ABC notation
+  return pattern.map((note, i) => getNoteAtOctaveLevel(note.degree, octaveLevels[i]));
+}
+
+/**
+ * Generate a left-hand broken chord measure with specified pattern
+ * @param {string[]} chordNotes - Array of chord note names
+ * @param {number} totalBeats - Total beats in the measure
+ * @param {string} pattern - Pattern type ('1-3-5-3' or '1-3-5-3-quarter')
+ * @returns {string} ABC notation for left-hand broken chords measure
+ */
+function generateLeftHandBrokenChords(chordNotes, totalBeats, pattern) {
+  if (chordNotes.length < 3) {
+    // Fallback to block chord if not enough notes
+    return generateBassChord(chordNotes, totalBeats);
+  }
+  
+  const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  
+  // Extract chord note names and convert to scale indices
+  const root = chordNotes[0].replace(/[#b]/g, '');
+  const third = chordNotes[1].replace(/[#b]/g, '');
+  const fifth = chordNotes[2].replace(/[#b]/g, '');
+  
+  const rootIndex = notes.findIndex(note => note === root);
+  const thirdIndex = notes.findIndex(note => note === third);
+  const fifthIndex = notes.findIndex(note => note === fifth);
+  
+  // Create properly spaced chord voicing for bass clef
+  // Start with root in lower octave, then space 3rd and 5th appropriately
+  const octaveOffset = 0;
+  const maxOctavesLower = 2;
+  
+  // Place root note in bass register (lower octave)
+  const rootNote = convertNoteIndexToABC(rootIndex - 7, octaveOffset, maxOctavesLower);
+  
+  // Find best octave placement for third and fifth to maintain close voicing
+  let thirdNote, fifthNote;
+  
+  // Try to place third within 3rd or 4th above root
+  let bestThirdOctave = 0;
+  for (let testOctave = -1; testOctave <= 1; testOctave++) {
+    const testPosition = thirdIndex + (testOctave * 7);
+    const rootPosition = rootIndex - 7; // Root position
+    const interval = testPosition - rootPosition;
+    
+    // Look for interval of 2-4 scale steps (3rd or 4th)
+    if (interval >= 2 && interval <= 4) {
+      bestThirdOctave = testOctave;
+      break;
+    }
+  }
+  thirdNote = convertNoteIndexToABC(thirdIndex + (bestThirdOctave * 7), octaveOffset, maxOctavesLower);
+  
+  // Place fifth within 3rd or 4th above third
+  let bestFifthOctave = bestThirdOctave;
+  const thirdPosition = thirdIndex + (bestThirdOctave * 7);
+  for (let testOctave = bestThirdOctave; testOctave <= bestThirdOctave + 1; testOctave++) {
+    const testPosition = fifthIndex + (testOctave * 7);
+    const interval = testPosition - thirdPosition;
+    
+    // Look for interval of 2-4 scale steps (3rd or 4th)
+    if (interval >= 2 && interval <= 4) {
+      bestFifthOctave = testOctave;
+      break;
+    }
+  }
+  fifthNote = convertNoteIndexToABC(fifthIndex + (bestFifthOctave * 7), octaveOffset, maxOctavesLower);
+  
+  let measure = '';
+  let beatsUsed = 0;
+  
+  if (pattern === '1-3-5-3-quarter') {
+    // Quarter note pattern - 4 quarter notes in 4/4 time
+    // Each quarter note takes 2 eighth-note units in our system
+    const quarterNoteBeats = 2;
+    const chordPattern = [rootNote, thirdNote, fifthNote, thirdNote];
+    
+    for (let i = 0; i < 4 && beatsUsed < totalBeats; i++) {
+      const patternIndex = i % chordPattern.length;
+      measure += chordPattern[patternIndex] + '2'; // '2' suffix for quarter notes
+      beatsUsed += quarterNoteBeats;
+    }
+  } else if (pattern === 'broken-chords-1') {
+    // Pattern: 1-5-1-3-5-3-1-5 with validated octave placements
+    const chordPattern = validateBrokenChordOctaves(rootIndex, thirdIndex, fifthIndex);
+    
+    while (beatsUsed < totalBeats) {
+      const patternIndex = beatsUsed % chordPattern.length;
+      measure += chordPattern[patternIndex]; // No duration notation = eighth notes (default)
+      beatsUsed += 1; // Each note is an eighth note (1 beat in our system)
+    }
+  } else {
+    // Default eighth note pattern (1-3-5-3)
+    const chordPattern = [rootNote, thirdNote, fifthNote, thirdNote];
+    
+    while (beatsUsed < totalBeats) {
+      const patternIndex = beatsUsed % chordPattern.length;
+      measure += chordPattern[patternIndex]; // No duration notation = eighth notes (default)
+      beatsUsed += 1; // Each note is an eighth note (1 beat in our system)
+    }
+  }
+  
+  return measure + '|';
+}
+
+/**
+ * Convert note index and octave information to proper ABC notation
+ * @param {number} noteIndex - Index in the scale (0-6, can be negative or > 6)
+ * @param {number} octaveOffset - Base octave offset
+ * @param {number} maxOctavesLower - Maximum octaves lower allowed
+ * @returns {string} ABC notation for the note
+ */
+function convertNoteIndexToABC(noteIndex, octaveOffset, maxOctavesLower) {
+  const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  let octaveLower = false;
+  
+  if (noteIndex < 0) {
+    octaveLower = true;
+  }
+  
+  let note = notes[((noteIndex % 7) + 7) % 7];
+  
+  if (octaveLower) {
+    let numOctavesLower = Math.abs(Math.floor((noteIndex + octaveOffset) / 7));
+    if (maxOctavesLower !== null) {
+      numOctavesLower = Math.min(numOctavesLower, maxOctavesLower);
+    }
+    note = note + ",".repeat(numOctavesLower);
+  } else if (noteIndex + octaveOffset >= 7) {
+    note = note.toLowerCase();
+    const octavesHigher = Math.floor((noteIndex + octaveOffset) / 7);
+    if (octavesHigher > 1) {
+      note = note + "'".repeat(octavesHigher - 1);
+    }
+  }
+  
+  return note;
+}
+
+/**
+ * Calculate the note at a given interval above a root note
+ * @param {string} rootNote - Root note name (e.g., 'C', 'E', 'G')
+ * @param {string} intervalType - Interval type ('2nd', '3rd', '4th', '5th', '6th', '7th')
+ * @param {string} key - Musical key for scale context
+ * @returns {string} The interval note name
+ */
+
+/**
+ * Generate a right-hand intervals measure (melody notes with selected interval above)
+ * @param {number} startIndex - Starting note index
+ * @param {number} lowestIndex - Lowest allowed note index
+ * @param {number} octaveOffset - Octave offset for note positioning
+ * @param {number} highestIndex - Highest allowed note index
+ * @param {number} maxOctavesLower - Maximum octaves lower allowed
+ * @param {string[]} chordNotes - Current chord notes for harmonic context
+ * @param {number} totalBeatsPerMeasure - Total beats in the measure
+ * @param {number[]} intervals - Available intervals for movement
+ * @param {object[]} availableDurations - Available note durations
+ * @param {string} key - Musical key for harmonic context
+ * @param {string} selectedInterval - Selected interval type ('2nd', '3rd', '4th', '5th', '6th', '7th')
+ * @returns {string} ABC notation for right-hand intervals measure
+ */
+function generateRightHandIntervals(startIndex, lowestIndex, octaveOffset, highestIndex, maxOctavesLower, chordNotes, totalBeatsPerMeasure, intervals, availableDurations, key, selectedInterval) {
+  let lastNoteIndex = startIndex;
+  let measure = '';
+  let beatsUsed = 0;
+  
+  const harmonicIndices = chordNotes ? getHarmonicNoteIndices(chordNotes, key) : null;
+  
+  while (beatsUsed < totalBeatsPerMeasure) {
+    let candidateIndex;
+    let interval = 0;
+    
+    if (harmonicIndices && Math.random() < 0.7) {
+      const harmonicIndex = harmonicIndices[Math.floor(Math.random() * harmonicIndices.length)];
+      candidateIndex = harmonicIndex;
+    } else {
+      interval = intervals[Math.floor(Math.random() * intervals.length)] - 1;
+      interval = Math.random() < 0.5 ? -interval : interval;
+      candidateIndex = lastNoteIndex + interval;
+    }
+    
+    if (highestIndex !== null && candidateIndex > highestIndex) {
+      candidateIndex = lastNoteIndex - Math.abs(interval || 1);
+    }
+    if (candidateIndex < lowestIndex) {
+      candidateIndex = lastNoteIndex + Math.abs(interval || 1);
+    }
+    lastNoteIndex = candidateIndex;
+    
+    // Calculate root note with proper octave handling
+    const rootNote = convertNoteIndexToABC(lastNoteIndex, octaveOffset, maxOctavesLower);
+    
+    // Calculate interval note index
+    const intervalSteps = {
+      '2nd': 1,
+      '3rd': 2,
+      '4th': 3,
+      '5th': 4,
+      '6th': 5,
+      '7th': 6
+    };
+    
+    const steps = intervalSteps[selectedInterval] || 2; // Default to 3rd if unknown
+    const intervalNoteIndex = lastNoteIndex + steps;
+    
+    // Calculate interval note with proper octave handling
+    const intervalNote = convertNoteIndexToABC(intervalNoteIndex, octaveOffset, maxOctavesLower);
+    
+    const remainingBeats = totalBeatsPerMeasure - beatsUsed;
+    const validDurations = availableDurations.filter(d => d.beats <= remainingBeats);
+    
+    if (validDurations.length === 0) {
+      const shortestDuration = availableDurations.reduce((shortest, current) => 
+        current.beats < shortest.beats ? current : shortest
+      );
+      
+      measure += `[${rootNote}${intervalNote}]${shortestDuration.abcNotation}`;
+      beatsUsed += shortestDuration.beats;
+      break;
+    }
+    
+    const selectedDuration = validDurations[Math.floor(Math.random() * validDurations.length)];
+    
+    measure += `[${rootNote}${intervalNote}]${selectedDuration.abcNotation}`;
+    beatsUsed += selectedDuration.beats;
+    
+    if (selectedDuration.abcNotation && beatsUsed < totalBeatsPerMeasure) {
+      measure += ' ';
+    }
+  }
+  
+  return measure + '|';
+}
+
+/**
+ * Generate a right-hand octaves measure (melody notes with octave higher)
+ * @param {number} startIndex - Starting note index
+ * @param {number} lowestIndex - Lowest allowed note index
+ * @param {number} octaveOffset - Octave offset for note positioning
+ * @param {number} highestIndex - Highest allowed note index
+ * @param {number} maxOctavesLower - Maximum octaves lower allowed
+ * @param {string[]} chordNotes - Current chord notes for harmonic context
+ * @param {number} totalBeatsPerMeasure - Total beats in the measure
+ * @param {number[]} intervals - Available intervals for movement
+ * @param {object[]} availableDurations - Available note durations
+ * @param {string} key - Musical key for harmonic context
+ * @returns {string} ABC notation for right-hand octaves measure
+ */
+function generateRightHandOctaves(startIndex, lowestIndex, octaveOffset, highestIndex, maxOctavesLower, chordNotes, totalBeatsPerMeasure, intervals, availableDurations, key) {
+  let lastNoteIndex = startIndex;
+  let octaveLower = false;
+  let measure = '';
+  let beatsUsed = 0;
+  
+  const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  const harmonicIndices = chordNotes ? getHarmonicNoteIndices(chordNotes, key) : null;
+  
+  while (beatsUsed < totalBeatsPerMeasure) {
+    let candidateIndex;
+    let interval = 0;
+    
+    if (harmonicIndices && Math.random() < 0.7) {
+      const harmonicIndex = harmonicIndices[Math.floor(Math.random() * harmonicIndices.length)];
+      candidateIndex = harmonicIndex;
+    } else {
+      interval = intervals[Math.floor(Math.random() * intervals.length)] - 1;
+      interval = Math.random() < 0.5 ? -interval : interval;
+      candidateIndex = lastNoteIndex + interval;
+    }
+    
+    if (highestIndex !== null && candidateIndex > highestIndex) {
+      candidateIndex = lastNoteIndex - Math.abs(interval || 1);
+    }
+    if (candidateIndex < lowestIndex) {
+      candidateIndex = lastNoteIndex + Math.abs(interval || 1);
+    }
+    lastNoteIndex = candidateIndex;
+    
+    let nextNoteIndex = lastNoteIndex;
+    if (nextNoteIndex < 0) {
+      octaveLower = true;
+    }
+    
+    let nextNote = notes[((lastNoteIndex % 7) + 7) % 7];
+    
+    if (octaveLower) {
+      let numOctavesLower = Math.abs(Math.floor((nextNoteIndex + octaveOffset) / 7));
+      if (maxOctavesLower !== null) {
+        numOctavesLower = Math.min(numOctavesLower, maxOctavesLower);
+      }
+      nextNote = nextNote + ",".repeat(numOctavesLower);
+      octaveLower = false;
+    } else if (nextNoteIndex + octaveOffset >= 7) {
+      nextNote = nextNote.toLowerCase();
+    }
+    
+    let octaveNote;
+    if (nextNote.includes(',')) {
+      // Remove one comma for octave higher
+      octaveNote = nextNote.replace(/,$/, '');
+    } else if (nextNote === nextNote.toUpperCase()) {
+      // Uppercase to lowercase for octave higher
+      octaveNote = nextNote.toLowerCase();
+    } else {
+      // Lowercase note gets apostrophe for octave higher
+      octaveNote = nextNote + "'";
+    }
+    
+    const remainingBeats = totalBeatsPerMeasure - beatsUsed;
+    const validDurations = availableDurations.filter(d => d.beats <= remainingBeats);
+    
+    if (validDurations.length === 0) {
+      const shortestDuration = availableDurations.reduce((shortest, current) => 
+        current.beats < shortest.beats ? current : shortest
+      );
+      
+      measure += `[${nextNote}${octaveNote}]${shortestDuration.abcNotation}`;
+      beatsUsed += shortestDuration.beats;
+      break;
+    }
+    
+    const selectedDuration = validDurations[Math.floor(Math.random() * validDurations.length)];
+    
+    measure += `[${nextNote}${octaveNote}]${selectedDuration.abcNotation}`;
+    beatsUsed += selectedDuration.beats;
+    
+    if (selectedDuration.abcNotation && beatsUsed < totalBeatsPerMeasure) {
+      measure += ' ';
+    }
+  }
+  
+  return measure + '|';
+}
+
+/**
+ * Generate a right-hand 3-note chord measure
+ * @param {number} startIndex - Starting note index
+ * @param {number} lowestIndex - Lowest allowed note index
+ * @param {number} octaveOffset - Octave offset for note positioning
+ * @param {number} highestIndex - Highest allowed note index
+ * @param {number} maxOctavesLower - Maximum octaves lower allowed
+ * @param {string[]} chordNotes - Current chord notes for harmonic context
+ * @param {number} totalBeatsPerMeasure - Total beats in the measure
+ * @param {number[]} intervals - Available intervals for movement
+ * @param {object[]} availableDurations - Available note durations
+ * @returns {string} ABC notation for right-hand 3-note chord measure
+ */
+function generateRightHand3NoteChords(startIndex, lowestIndex, octaveOffset, highestIndex, maxOctavesLower, chordNotes, totalBeatsPerMeasure, intervals, availableDurations) {
+  let measure = '';
+  let beatsUsed = 0;
+  
+  // If no chord notes provided, use default C major chord
+  const currentChordNotes = chordNotes || ['C', 'E', 'G'];
+  
+  while (beatsUsed < totalBeatsPerMeasure) {
+    // Generate a 3-note chord using chord tones
+    const chordVoicing = generate3NoteChordVoicing(currentChordNotes, octaveOffset, maxOctavesLower);
+    
+    // Select duration that fits in remaining beats
+    const remainingBeats = totalBeatsPerMeasure - beatsUsed;
+    const validDurations = availableDurations.filter(d => d.beats <= remainingBeats);
+    
+    if (validDurations.length === 0) {
+      const shortestDuration = availableDurations.reduce((shortest, current) => 
+        current.beats < shortest.beats ? current : shortest
+      );
+      
+      measure += `[${chordVoicing.join('')}]${shortestDuration.abcNotation}`;
+      beatsUsed += shortestDuration.beats;
+      break;
+    }
+    
+    const selectedDuration = validDurations[Math.floor(Math.random() * validDurations.length)];
+    
+    // Add 3-note chord to measure
+    measure += `[${chordVoicing.join('')}]${selectedDuration.abcNotation}`;
+    beatsUsed += selectedDuration.beats;
+    
+    // Add space after chord if not at end of measure
+    if (selectedDuration.abcNotation && beatsUsed < totalBeatsPerMeasure) {
+      measure += ' ';
+    }
+  }
+  
+  return measure + '|';
+}
+
+/**
+ * Generate a 3-note chord voicing using chord tones with varied inversions and octaves
+ * @param {string[]} chordNotes - Current chord notes (root, third, fifth)
+ * @param {number} octaveOffset - Octave offset for note positioning
+ * @param {number} maxOctavesLower - Maximum octaves lower allowed
+ * @returns {string[]} Array of ABC notation strings for the 3 chord notes
+ */
+function generate3NoteChordVoicing(chordNotes, octaveOffset, maxOctavesLower) {
+  const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  
+  if (chordNotes.length < 3) {
+    // Fallback to default C major chord if not enough notes
+    chordNotes = ['C', 'E', 'G'];
+  }
+  
+  // Extract chord tones
+  const root = chordNotes[0];
+  const third = chordNotes[1];
+  const fifth = chordNotes[2];
+  
+  // Convert chord note names to note indices
+  const rootIndex = notes.findIndex(note => note === root.replace(/[#b]/g, ''));
+  const thirdIndex = notes.findIndex(note => note === third.replace(/[#b]/g, ''));
+  const fifthIndex = notes.findIndex(note => note === fifth.replace(/[#b]/g, ''));
+  
+  // Create chord voicings where each note is only a 3rd or 4th apart from the next
+  // Start with different chord orderings (inversions)
+  const chordOrderings = [
+    [rootIndex, thirdIndex, fifthIndex],  // Root position
+    [thirdIndex, fifthIndex, rootIndex],  // First inversion
+    [fifthIndex, rootIndex, thirdIndex],  // Second inversion
+  ];
+  
+  // Randomly select a chord ordering
+  const selectedOrdering = chordOrderings[Math.floor(Math.random() * chordOrderings.length)];
+  
+  // Build voicing with close spacing - each note 3rd or 4th apart
+  const voicing = [];
+  let previousNotePosition = null; // Track actual position of previous note
+  
+  for (let i = 0; i < selectedOrdering.length; i++) {
+    const noteIndex = selectedOrdering[i];
+    
+    if (i === 0) {
+      // First note - place in middle register (octave 0)
+      const adjustedIndex = noteIndex + (0 * 7);
+      voicing.push(convertNoteIndexToABC(adjustedIndex, octaveOffset, maxOctavesLower));
+      previousNotePosition = adjustedIndex;
+    } else {
+      // Subsequent notes - find closest position that's 3rd or 4th above previous note
+      let bestOctave = 0;
+      let bestInterval = Infinity;
+      
+      // Try different octaves to find the one that gives 3rd or 4th interval
+      for (let testOctave = -1; testOctave <= 2; testOctave++) {
+        const testPosition = noteIndex + (testOctave * 7);
+        const interval = testPosition - previousNotePosition;
+        
+        // Check if this interval is 3rd or 4th (2-4 semitones) and ascending
+        if (interval >= 2 && interval <= 4) {
+          bestOctave = testOctave;
+          bestInterval = interval;
+          break; // Found a good interval, use it
+        }
+      }
+      
+      // If no perfect 3rd/4th found, use the closest interval that's ascending
+      if (bestInterval === Infinity) {
+        for (let testOctave = 0; testOctave <= 2; testOctave++) {
+          const testPosition = noteIndex + (testOctave * 7);
+          const interval = testPosition - previousNotePosition;
+          
+          if (interval > 0 && interval < bestInterval) {
+            bestOctave = testOctave;
+            bestInterval = interval;
+          }
+        }
+      }
+      
+      // Place the note at the calculated octave
+      const adjustedIndex = noteIndex + (bestOctave * 7);
+      voicing.push(convertNoteIndexToABC(adjustedIndex, octaveOffset, maxOctavesLower));
+      previousNotePosition = adjustedIndex;
+    }
+  }
+  
+  return voicing;
+}
+
+/**
+ * Generate a right-hand 4-note chord measure
+ * @param {number} startIndex - Starting note index
+ * @param {number} lowestIndex - Lowest allowed note index
+ * @param {number} octaveOffset - Octave offset for note positioning
+ * @param {number} highestIndex - Highest allowed note index
+ * @param {number} maxOctavesLower - Maximum octaves lower allowed
+ * @param {string[]} chordNotes - Current chord notes for harmonic context
+ * @param {number} totalBeatsPerMeasure - Total beats in the measure
+ * @param {number[]} intervals - Available intervals for movement
+ * @param {object[]} availableDurations - Available note durations
+ * @param {string} key - Musical key for harmonic context
+ * @param {string} selectedChordType - Selected chord type ('major', '7th')
+ * @returns {string} ABC notation for right-hand 4-note chord measure
+ */
+function generateRightHand4NoteChords(startIndex, lowestIndex, octaveOffset, highestIndex, maxOctavesLower, chordNotes, totalBeatsPerMeasure, intervals, availableDurations, key, selectedChordType) {
+  let measure = '';
+  let beatsUsed = 0;
+  
+  // If no chord notes provided, use default C major chord
+  const currentChordNotes = chordNotes || ['C', 'E', 'G'];
+  
+  while (beatsUsed < totalBeatsPerMeasure) {
+    // Generate a 4-note chord using chord tones
+    const chordVoicing = generate4NoteChordVoicing(currentChordNotes, octaveOffset, maxOctavesLower, selectedChordType);
+    
+    // Select duration that fits in remaining beats
+    const remainingBeats = totalBeatsPerMeasure - beatsUsed;
+    const validDurations = availableDurations.filter(d => d.beats <= remainingBeats);
+    
+    if (validDurations.length === 0) {
+      const shortestDuration = availableDurations.reduce((shortest, current) => 
+        current.beats < shortest.beats ? current : shortest
+      );
+      
+      measure += `[${chordVoicing.join('')}]${shortestDuration.abcNotation}`;
+      beatsUsed += shortestDuration.beats;
+      break;
+    }
+    
+    const selectedDuration = validDurations[Math.floor(Math.random() * validDurations.length)];
+    
+    // Add 4-note chord to measure
+    measure += `[${chordVoicing.join('')}]${selectedDuration.abcNotation}`;
+    beatsUsed += selectedDuration.beats;
+    
+    // Add space after chord if not at end of measure
+    if (selectedDuration.abcNotation && beatsUsed < totalBeatsPerMeasure) {
+      measure += ' ';
+    }
+  }
+  
+  return measure + '|';
+}
+
+/**
+ * Generate a 4-note chord voicing using chord tones with varied inversions and octaves
+ * @param {string[]} chordNotes - Current chord notes (root, third, fifth)
+ * @param {number} octaveOffset - Octave offset for note positioning
+ * @param {number} maxOctavesLower - Maximum octaves lower allowed
+ * @param {string} chordType - Type of chord ('major', '7th')
+ * @returns {string[]} Array of ABC notation strings for the 4 chord notes
+ */
+function generate4NoteChordVoicing(chordNotes, octaveOffset, maxOctavesLower, chordType) {
+  const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  
+  if (chordNotes.length < 3) {
+    // Fallback to default C major chord if not enough notes
+    chordNotes = ['C', 'E', 'G'];
+  }
+  
+  // Extract chord tones
+  const root = chordNotes[0];
+  const third = chordNotes[1];
+  const fifth = chordNotes[2];
+  
+  // Convert chord note names to note indices
+  const rootIndex = notes.findIndex(note => note === root.replace(/[#b]/g, ''));
+  const thirdIndex = notes.findIndex(note => note === third.replace(/[#b]/g, ''));
+  const fifthIndex = notes.findIndex(note => note === fifth.replace(/[#b]/g, ''));
+  
+  // Calculate seventh note index based on chord type
+  let seventhIndex;
+  if (chordType === '7th') {
+    // For 7th chord, add the 7th scale degree
+    seventhIndex = (rootIndex + 6) % 7; // 7th is 6 steps from root in scale
+  } else {
+    // For major chord, double the root for 4-note voicing
+    seventhIndex = rootIndex;
+  }
+  
+  // Create 4-note chord voicings
+  const chordOrderings = chordType === '7th' ? [
+    [rootIndex, thirdIndex, fifthIndex, seventhIndex],  // Root position 7th
+    [thirdIndex, fifthIndex, seventhIndex, rootIndex],  // First inversion 7th
+    [fifthIndex, seventhIndex, rootIndex, thirdIndex],  // Second inversion 7th
+    [seventhIndex, rootIndex, thirdIndex, fifthIndex],  // Third inversion 7th
+  ] : [
+    [rootIndex, thirdIndex, fifthIndex, rootIndex],     // Root position with doubled root
+    [thirdIndex, fifthIndex, rootIndex, thirdIndex],    // First inversion with doubled third
+    [fifthIndex, rootIndex, thirdIndex, fifthIndex],    // Second inversion with doubled fifth
+  ];
+  
+  // Randomly select a chord ordering
+  const selectedOrdering = chordOrderings[Math.floor(Math.random() * chordOrderings.length)];
+  
+  // Build voicing with close spacing - each note 2nd-4th apart
+  const voicing = [];
+  let previousNotePosition = null;
+  
+  for (let i = 0; i < selectedOrdering.length; i++) {
+    const noteIndex = selectedOrdering[i];
+    
+    if (i === 0) {
+      // First note - place in middle register (octave 0)
+      const adjustedIndex = noteIndex + (0 * 7);
+      voicing.push(convertNoteIndexToABC(adjustedIndex, octaveOffset, maxOctavesLower));
+      previousNotePosition = adjustedIndex;
+    } else {
+      // Subsequent notes - find closest position that's 2nd-4th above previous note
+      let bestOctave = 0;
+      let bestInterval = Infinity;
+      
+      // Try different octaves to find the one that gives 2nd-4th interval
+      for (let testOctave = -1; testOctave <= 2; testOctave++) {
+        const testPosition = noteIndex + (testOctave * 7);
+        const interval = testPosition - previousNotePosition;
+        
+        // Check if this interval is 2nd-4th (1-4 scale steps) and ascending
+        if (interval >= 1 && interval <= 4) {
+          bestOctave = testOctave;
+          bestInterval = interval;
+          break;
+        }
+      }
+      
+      // If no perfect 2nd-4th found, use the closest interval that's ascending
+      if (bestInterval === Infinity) {
+        for (let testOctave = 0; testOctave <= 2; testOctave++) {
+          const testPosition = noteIndex + (testOctave * 7);
+          const interval = testPosition - previousNotePosition;
+          
+          if (interval > 0 && interval < bestInterval) {
+            bestOctave = testOctave;
+            bestInterval = interval;
+          }
+        }
+      }
+      
+      // Place the note at the calculated octave
+      const adjustedIndex = noteIndex + (bestOctave * 7);
+      voicing.push(convertNoteIndexToABC(adjustedIndex, octaveOffset, maxOctavesLower));
+      previousNotePosition = adjustedIndex;
+    }
+  }
+  
+  return voicing;
+}
