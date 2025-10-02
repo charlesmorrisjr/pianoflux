@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import abcjs from 'abcjs';
 import { generateRandomABC } from '@/utils/musicGenerator';
 
 import SheetMusicDisplay from '@/features/practice/components/SheetMusicDisplay';
@@ -12,8 +13,17 @@ export default function Practice() {
   const [exercise2, setExercise2] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   
+  // Refs for cursor control
+  const sheetMusicRef = useRef(null);
+  const timingCallbacksRef = useRef(null);
+
   // Generate music
   const handleGenerate = () => {
+    // Stop cursor if playing
+    if (isPlaying) {
+      stopCursor()
+    }
+
     const result1 = generateRandomABC({
       measures: 4,
       key: 'C',
@@ -23,6 +33,7 @@ export default function Practice() {
       rightHandPatterns: ['single-notes']
     });
 
+    console.log('✅ Exercise 1 generated:', result1);
     setExercise1(result1);
 
     const result2 = generateRandomABC({
@@ -34,19 +45,117 @@ export default function Practice() {
       rightHandPatterns: ['single-notes']
     });
 
+    console.log('✅ Exercise 2 generated:', result2);
     setExercise2(result2);
   }
 
+  const startCursor = () => { 
+    const visualObj = sheetMusicRef.current?.getVisualObj()
+    if (!visualObj) {
+      console.error('❌ No visual object')
+      return
+    }
+    
+    const svgContainer = document.querySelector('.sheet-music svg')
+    if (!svgContainer) {
+      console.error('❌ No SVG container')
+      return
+    }
+    
+    // Fix SVG dimensions if null
+    const viewBox = svgContainer.getAttribute('viewBox');
+    if (viewBox) {
+      const [, , width, height] = viewBox.split(' ');
+      if (!svgContainer.getAttribute('width')) {
+        svgContainer.setAttribute('width', width);
+        svgContainer.setAttribute('height', height);
+      }
+    }
+    
+    // Remove existing cursor
+    const existingCursor = svgContainer.querySelector('.playback-cursor')
+    if (existingCursor) {
+      existingCursor.remove()
+    }
+    
+    // Create cursor with VERY OBVIOUS settings for debugging
+    const cursor = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+    cursor.setAttribute('class', 'playback-cursor')
+    
+    // Use solid color with separate opacity
+    cursor.setAttribute('fill', 'red')           // Bright red
+    cursor.setAttribute('opacity', '0.8')        // Very visible
+    cursor.setAttribute('stroke', 'black')       // Black border
+    cursor.setAttribute('stroke-width', '4')     // Thick border
+    cursor.setAttribute('rx', '0')               // No rounded corners (easier to see)
+    cursor.setAttribute('ry', '0')
+    cursor.style.pointerEvents = 'none'
+    
+    // Append cursor
+    svgContainer.appendChild(cursor)
+    
+    // Verify it's actually there
+    const cursorCheck = svgContainer.querySelector('.playback-cursor');
+    
+    if (cursorCheck) {      
+      // Try to force it to be visible
+      cursorCheck.style.display = 'block';
+      cursorCheck.style.visibility = 'visible';
+    }
+    
+    // Create timing callbacks
+    try {
+      const timingCallbacks = new abcjs.TimingCallbacks(visualObj, {
+        qpm: 120,
+        beatSubdivisions: 2,
+        
+        eventCallback: (event) => {
+          if (!event) {
+            stopCursor()
+            return
+          }
+          
+          const x = (event.left || 0) - 2;
+          const y = (event.top || 0) - 5;
+          const width = 60;  // Wider for testing
+          const height = (event.height || 40) + 10;
+          
+          cursor.setAttribute('x', x)
+          cursor.setAttribute('y', y)
+          cursor.setAttribute('width', width)
+          cursor.setAttribute('height', height)
+        }
+      })
+      
+      timingCallbacksRef.current = timingCallbacks
+      timingCallbacks.start()
+      
+    } catch (error) {
+      console.error('❌ Error starting cursor:', error);
+    }
+  }
+  
+  const stopCursor = () => {
+    if (timingCallbacksRef.current) {
+      timingCallbacksRef.current.stop()
+      timingCallbacksRef.current = null
+    }
+    
+    const svgContainer = document.querySelector('.sheet-music svg')
+    if (svgContainer) {
+      const cursor = svgContainer.querySelector('.playback-cursor')
+      if (cursor) cursor.remove()
+    }
+    
+    setIsPlaying(false)
+  }
+  
   const handlePlayStopToggle = () => {
-    setIsPlaying(prev => !prev);
-
-    // Future: Start/stop cursor animation
-    if (!isPlaying) {
-      console.log('Starting playback...')
-      // TODO: Start cursor movement
+    if (isPlaying) {
+      stopCursor();
     } else {
-      console.log('Stopping playback...')
-      // TODO: Stop cursor movement
+      setIsPlaying(true);
+      startCursor();
     }
   }
   
@@ -66,11 +175,11 @@ export default function Practice() {
           />
           
           <Card>
-            <SheetMusicDisplay abcNotation={exercise1.abcNotation} />
+            <SheetMusicDisplay ref={sheetMusicRef} abcNotation={exercise1.abcNotation} />
             {/* Later you'll use exercise1.noteMetadata for MIDI matching */}
             <p>Notes to play: {exercise1.noteMetadata.length}</p>
 
-            <SheetMusicDisplay abcNotation={exercise2.abcNotation} />
+            {/* <SheetMusicDisplay abcNotation={exercise2.abcNotation} /> */}
             {/* Later you'll use exercise1.noteMetadata for MIDI matching */}
             <p>Notes to play: {exercise2.noteMetadata.length}</p>
           </Card>

@@ -1,16 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import abcjs from 'abcjs';
 
 import './SheetMusicDisplay.css';
 
-export default function SheetMusicDisplay ({ abcNotation, options = {} }) {
+const SheetMusicDisplay = forwardRef(({ abcNotation }, ref) => {
   const containerRef = useRef(null);
+  const visualObjRef = useRef(null);  // Stores ABCJS visual object so we can draw cursor
+
+  useImperativeHandle(ref, () => ({
+    getVisualObj: () => visualObjRef.current
+  }));
 
   useEffect(() => {
     if (!containerRef.current || !abcNotation) return;
 
-    // Render ABCJS in div
-    abcjs.renderAbc(containerRef.current, abcNotation, {
+    // Capture the return value after rendering ABCJS
+    const visualObjArray = abcjs.renderAbc(containerRef.current, abcNotation, {
       wrap: {
         minSpacing: 1.8,
         maxSpacing: 2.8,
@@ -19,8 +24,12 @@ export default function SheetMusicDisplay ({ abcNotation, options = {} }) {
       responsive: 'resize',
       staffwidth: 800,
       add_classes: true,    // Allows highlighting
-      ...options            // Allow custom options to be passed in
     })
+
+    // Store the visual object
+    if (visualObjArray && visualObjArray.length > 0) {
+      visualObjRef.current = visualObjArray[0];
+    }
 
     // Cleanup
     return () => {
@@ -28,11 +37,13 @@ export default function SheetMusicDisplay ({ abcNotation, options = {} }) {
         containerRef.current.innerHTML = "";
       }
     }
-  }, [abcNotation, options]);
+  }, [abcNotation]);
 
   return (
     <>
       <div ref={containerRef} className="sheet-music"></div>
     </>
   );
-}
+});
+
+export default SheetMusicDisplay;

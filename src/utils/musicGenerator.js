@@ -245,7 +245,7 @@ export function generateRandomABC(options) {
   // Default if not provided in settings
   const {
     measures = 8,
-    tempo = 120,
+    tempo = 60,
     key = 'C',
     timeSignature = '4/4',
     intervals = [1, 2, 3, 4, 5],
