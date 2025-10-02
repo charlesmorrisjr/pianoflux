@@ -78,17 +78,14 @@ export default function Practice() {
       existingCursor.remove()
     }
     
-    // Create cursor with VERY OBVIOUS settings for debugging
-    const cursor = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-    cursor.setAttribute('class', 'playback-cursor')
-    
-    // Use solid color with separate opacity
-    cursor.setAttribute('fill', 'blue')        
-    cursor.setAttribute('opacity', '0.3')        
-    // cursor.setAttribute('stroke-width', '2')     
-    cursor.setAttribute('rx', '20')            // Rounded corners
-    cursor.setAttribute('ry', '20')
-    cursor.style.pointerEvents = 'none'
+    // Create the cursor line
+    const cursor = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    cursor.setAttribute('class', 'playback-cursor');
+    cursor.setAttribute('stroke', '#f59e0b'); // Orange for practice
+    cursor.setAttribute('stroke-width', '12');
+    cursor.setAttribute('stroke-linecap', 'round');
+    cursor.setAttribute('opacity', '0.3');
+    cursor.style.pointerEvents = 'none';
     
     // Append cursor
     svgContainer.appendChild(cursor)
@@ -114,15 +111,16 @@ export default function Practice() {
             return
           }
           
-          const x = (event.left || 0) - 2;
+          // Calculate line position
+          const x = event.left || 0;
           const y = (event.top || 0) - 5;
-          const width = 16;  // Wider for testing
           const height = (event.height || 40) + 10;
           
-          cursor.setAttribute('x', x)
-          cursor.setAttribute('y', y)
-          cursor.setAttribute('width', width)
-          cursor.setAttribute('height', height)
+          // Set LINE attributes (not rect attributes!)
+          cursor.setAttribute('x1', x);              // ← x1, not x
+          cursor.setAttribute('y1', y);              // ← y1, not y
+          cursor.setAttribute('x2', x);              // ← x2, not width
+          cursor.setAttribute('y2', y + height);     // ← y2, not height
         }
       })
       

@@ -5,7 +5,7 @@ import './SheetMusicDisplay.css';
 
 const SheetMusicDisplay = forwardRef(({ abcNotation }, ref) => {
   const containerRef = useRef(null);
-  const visualObjRef = useRef(null);  // Stores ABCJS visual object so we can draw cursor
+  const visualObjRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
     getVisualObj: () => visualObjRef.current
@@ -14,24 +14,33 @@ const SheetMusicDisplay = forwardRef(({ abcNotation }, ref) => {
   useEffect(() => {
     if (!containerRef.current || !abcNotation) return;
 
-    // Capture the return value after rendering ABCJS
+    // Calculate container width for responsive behavior
+    // const containerWidth = containerRef.current.clientWidth || 900;
+    // const useResponsive = containerWidth < 800;
+
+    // Render ABCJS with padding and conditional responsive mode
     const visualObjArray = abcjs.renderAbc(containerRef.current, abcNotation, {
       wrap: {
         minSpacing: 1.8,
         maxSpacing: 2.8,
         preferredMeasuresPerLine: 4
       },
+      // Only use responsive on smaller screens
+      // ...(useResponsive && { responsive: 'resize' }),
       responsive: 'resize',
       staffwidth: 800,
-      add_classes: true,    // Allows highlighting
-    })
+      add_classes: true,
+      paddingleft: 20,
+      paddingright: 20,
+      paddingtop: 20,
+      paddingbottom: 20
+    });
 
-    // Store the visual object
     if (visualObjArray && visualObjArray.length > 0) {
       visualObjRef.current = visualObjArray[0];
+      console.log('✅ Visual object stored:', visualObjRef.current);
     }
 
-    // Cleanup
     return () => {
       if (containerRef.current) {
         containerRef.current.innerHTML = "";

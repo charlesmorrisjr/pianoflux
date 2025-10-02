@@ -7,6 +7,10 @@
   overflow-x: auto;
 }
 
+.sheet-music svg {
+  overflow: visible !important;
+}
+
 /* Hide tempo marking */
 .abcjs-tempo {
   display: none;
