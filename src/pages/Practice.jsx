@@ -3,12 +3,14 @@ import { generateRandomABC } from '@/utils/musicGenerator';
 
 import SheetMusicDisplay from '@/features/practice/components/SheetMusicDisplay';
 import Card from '@/shared/components/Card';
+import PlayStopButton from '@/features/practice/components/PlayStopButton';
 
 import './Practice.css';
 
 export default function Practice() {
   const [exercise1, setExercise1] = useState(null);
   const [exercise2, setExercise2] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   
   // Generate music
   const handleGenerate = () => {
@@ -34,6 +36,19 @@ export default function Practice() {
 
     setExercise2(result2);
   }
+
+  const handlePlayStopToggle = () => {
+    setIsPlaying(prev => !prev);
+
+    // Future: Start/stop cursor animation
+    if (!isPlaying) {
+      console.log('Starting playback...')
+      // TODO: Start cursor movement
+    } else {
+      console.log('Stopping playback...')
+      // TODO: Stop cursor movement
+    }
+  }
   
   return (
     <div className="practice">
@@ -45,6 +60,11 @@ export default function Practice() {
 
       {exercise1 && (
         <>
+          <PlayStopButton
+            isPlaying={isPlaying}
+            onToggle={handlePlayStopToggle}
+          />
+          
           <Card>
             <SheetMusicDisplay abcNotation={exercise1.abcNotation} />
             {/* Later you'll use exercise1.noteMetadata for MIDI matching */}

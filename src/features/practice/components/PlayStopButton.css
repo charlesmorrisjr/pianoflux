@@ -1,0 +1,38 @@
+.play-stop-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Play state (green) */
+.play-stop-button.stopped {
+  background-color: #10b981;
+  color: white;
+}
+
+.play-stop-button.stopped:hover {
+  background-color: #059669;
+}
+
+/* Stop state (red) */
+.play-stop-button.playing {
+  background-color: #ef4444;
+  color: white;
+}
+
+.play-stop-button.playing:hover {
+  background-color: #dc2626;
+}
+
+/* Icon styling */
+.play-stop-button svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
