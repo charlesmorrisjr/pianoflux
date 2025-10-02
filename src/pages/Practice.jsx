@@ -83,12 +83,11 @@ export default function Practice() {
     cursor.setAttribute('class', 'playback-cursor')
     
     // Use solid color with separate opacity
-    cursor.setAttribute('fill', 'red')           // Bright red
-    cursor.setAttribute('opacity', '0.8')        // Very visible
-    cursor.setAttribute('stroke', 'black')       // Black border
-    cursor.setAttribute('stroke-width', '4')     // Thick border
-    cursor.setAttribute('rx', '0')               // No rounded corners (easier to see)
-    cursor.setAttribute('ry', '0')
+    cursor.setAttribute('fill', 'blue')        
+    cursor.setAttribute('opacity', '0.3')        
+    // cursor.setAttribute('stroke-width', '2')     
+    cursor.setAttribute('rx', '20')            // Rounded corners
+    cursor.setAttribute('ry', '20')
     cursor.style.pointerEvents = 'none'
     
     // Append cursor
@@ -117,7 +116,7 @@ export default function Practice() {
           
           const x = (event.left || 0) - 2;
           const y = (event.top || 0) - 5;
-          const width = 60;  // Wider for testing
+          const width = 16;  // Wider for testing
           const height = (event.height || 40) + 10;
           
           cursor.setAttribute('x', x)
