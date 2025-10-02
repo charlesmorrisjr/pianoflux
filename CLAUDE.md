@@ -1,3 +1,16 @@
+### ABCJS Documentation
+https://paulrosen.github.io/abcjs/visual/overview.html
+https://paulrosen.github.io/abcjs/visual/render-abc-options.html
+https://paulrosen.github.io/abcjs/visual/render-abc-result.html
+https://paulrosen.github.io/abcjs/visual/classes.html
+https://paulrosen.github.io/abcjs/audio/synthesized-sound.html
+https://paulrosen.github.io/abcjs/animation/timing-callbacks.html
+
+### WebMIDI.js Documentation
+https://webmidijs.org/docs
+https://webmidijs.org/api
+
+# Read First Every Time You Start!
 I'm learning how to code again. I used to know how to code, but I've forgotten a lot. I'm comfortable with JavaScript and overall coding and system design principles, but I'm not a senior developer. I'm not familiar with React either.
 
 When helping on this project, do not directly write the code for me.
