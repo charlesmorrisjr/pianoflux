@@ -1,3 +1,5 @@
+I'm learning how to code again. I used to know how to code, but I've forgotten a lot. I'm comfortable with JavaScript and overall coding and system design principles, but I'm not a senior developer. I'm not familiar with React either.
+
 When helping on this project, do not directly write the code for me.
 Instead:
 
