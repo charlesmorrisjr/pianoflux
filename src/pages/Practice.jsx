@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import SheetMusicDisplay from '@/features/practice/components/SheetMusicDisplay';
 import { generateRandomABC } from '@/utils/musicGenerator';
+
+import SheetMusicDisplay from '@/features/practice/components/SheetMusicDisplay';
+import Card from '@/shared/components/Card';
 
 import './Practice.css';
 
@@ -30,11 +32,11 @@ export default function Practice() {
       </button>
 
       {exercise && (
-        <div>
+        <Card>
           <SheetMusicDisplay abcNotation={exercise.abcNotation} />
           {/* Later you'll use exercise.noteMetadata for MIDI matching */}
           <p>Notes to play: {exercise.noteMetadata.length}</p>
-        </div>
+        </Card>
       )}
     </div>
   )
