@@ -61,7 +61,7 @@ export default function Practice() {
       console.error('❌ No SVG container')
       return
     }
-    
+
     // Fix SVG dimensions if null
     const viewBox = svgContainer.getAttribute('viewBox');
     if (viewBox) {
@@ -89,15 +89,6 @@ export default function Practice() {
     
     // Append cursor
     svgContainer.appendChild(cursor)
-    
-    // Verify it's actually there
-    const cursorCheck = svgContainer.querySelector('.playback-cursor');
-    
-    if (cursorCheck) {      
-      // Try to force it to be visible
-      cursorCheck.style.display = 'block';
-      cursorCheck.style.visibility = 'visible';
-    }
     
     // Create timing callbacks
     try {

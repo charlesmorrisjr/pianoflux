@@ -1,0 +1,190 @@
+.music-display {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.music-notation {
+  width: 100%;
+  text-align: center;
+}
+
+/* Style the rendered ABC notation */
+.music-notation svg {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+/* Add thickness to staff lines, notes, clefs, and time signatures to improve visibility
+.music-notation .abcjs-staff {
+  stroke: #1f2937;
+  stroke-width: 1.2;
+}
+
+.music-notation .abcjs-note {
+  fill: #1f2937;
+  stroke: #1f2937;
+}
+
+.music-notation .abcjs-clef,
+.music-notation .abcjs-key-signature,
+.music-notation .abcjs-time-signature {
+  fill: #1f2937;
+  stroke: #1f2937;
+}
+*/
+
+.music-placeholder {
+  text-align: center;
+  color: #6b7280;
+  max-width: 400px;
+}
+
+.placeholder-icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+  color: #9ca3af;
+}
+
+.placeholder-icon {
+  display: block;
+  margin: 0 auto 16px;
+}
+
+.music-placeholder p {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.error-message {
+  color: #dc2626;
+  font-size: 1rem;
+  text-align: center;
+  padding: 20px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  margin: 20px;
+}
+
+/* Tablet optimization */
+@media (max-width: 1024px) {
+  .music-display {
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  
+  .placeholder-icon {
+    font-size: 3rem;
+  }
+  
+  .music-placeholder p {
+    font-size: 1rem;
+  }
+}
+
+/* Mobile optimization */
+@media (max-width: 640px) {
+  .music-display {
+    padding: 16px;
+    margin-bottom: 16px;
+    min-height: 300px;
+  }
+  
+  .placeholder-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+  }
+  
+  .music-placeholder p {
+    font-size: 0.9rem;
+  }
+  
+  .music-notation svg {
+    font-size: 14px;
+  }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .music-notation svg {
+    image-rendering: crisp-edges;
+  }
+}
+
+/* Focus states for accessibility */
+.music-display:focus-within {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Music notation cursor/highlight styles */
+.note-highlight {
+  fill: #fbbf24 !important; /* Yellow highlight */
+  stroke: #f59e0b !important;
+  stroke-width: 2 !important;
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.6));
+  transition: all 0.1s ease-in-out;
+}
+
+/* Alternative blue highlight theme (can be toggled) */
+.note-highlight.blue-theme {
+  fill: #60a5fa !important;
+  stroke: #3b82f6 !important;
+  filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.6));
+}
+
+/* Smooth transitions for highlights */
+.music-notation .abcjs-note, 
+.music-notation .abcjs-chord {
+  transition: fill 0.1s ease-in-out, stroke 0.1s ease-in-out, filter 0.1s ease-in-out;
+}
+
+/* Cursor animation keyframes */
+@keyframes noteHighlight {
+  0% { 
+    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.4));
+  }
+  50% { 
+    filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+  }
+  100% { 
+    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.4));
+  }
+}
+
+.note-highlight.animated {
+  animation: noteHighlight 0.5s ease-in-out;
+}
+
+/* Dark mode support (disabled for now, will be added later) */
+/* @media (prefers-color-scheme: dark) {
+  .music-display {
+    background: #374151;
+    color: #f9fafb;
+  }
+  
+  .music-notation .abcjs-staff,
+  .music-notation .abcjs-note,
+  .music-notation .abcjs-clef,
+  .music-notation .abcjs-key-signature,
+  .music-notation .abcjs-time-signature {
+    fill: #f9fafb;
+    stroke: #f9fafb;
+  }
+  
+  .music-placeholder {
+    color: #d1d5db;
+  }
+  
+  .placeholder-icon {
+    color: #9ca3af;
+  }
+} */
