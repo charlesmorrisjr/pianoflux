@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import abcjs from 'abcjs';
 import { generateRandomABC } from '@/utils/musicGenerator';
+import { initializeMIDI } from '@/utils/midiManager';
 
 import SheetMusicDisplay from '@/features/practice/components/SheetMusicDisplay';
 import Card from '@/shared/components/Card';
@@ -48,6 +49,14 @@ export default function Practice() {
     console.log('✅ Exercise 2 generated:', result2);
     setExercise2(result2);
   }
+
+  // Inside your component's useEffect:
+  useEffect(() => {
+    initializeMIDI((noteEvent) => {
+      console.log('MIDI Event:', noteEvent);
+      // Handle the note event here
+    });
+  }, []);
 
   const startCursor = () => { 
     const visualObj = sheetMusicRef.current?.getVisualObj()
